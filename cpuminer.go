@@ -1,5 +1,5 @@
 // Copyright (c) 2014 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -228,12 +228,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, ticker *time.Ticker,
 		// Update the extra nonce in the block template with the
 		// new value by regenerating the coinbase script and
 		// setting the merkle root to the new value.  The
-		err := UpdateExtraNonce(msgBlock, blockHeight, ens)
-		if err != nil {
-			minrLog.Warnf("Unable to update CPU miner extranonce: %v",
-				err)
-			break
-		}
+		UpdateExtraNonce(msgBlock, blockHeight, ens)
 
 		// Search through the entire nonce range for a solution while
 		// periodically checking for early quit and stale block
@@ -258,12 +253,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, ticker *time.Ticker,
 					return false
 				}
 
-				err = UpdateBlockTime(msgBlock, m.server.blockManager)
-				if err != nil {
-					minrLog.Warnf("CPU miner unable to update block template "+
-						"time: %v", err)
-					return false
-				}
+				UpdateBlockTime(msgBlock, m.server.blockManager)
 
 			default:
 				// Non-blocking select to fall through

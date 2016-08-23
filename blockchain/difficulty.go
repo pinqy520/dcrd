@@ -1,5 +1,5 @@
-// Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2013-2014 The btcsuite developers
+// Copyright (c) 2015 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -204,8 +204,6 @@ func (b *BlockChain) calcEasiestDifficulty(bits uint32,
 
 // findPrevTestNetDifficulty returns the difficulty of the previous block which
 // did not have the special testnet minimum difficulty rule applied.
-//
-// This function MUST be called with the chain state lock held (for writes).
 func (b *BlockChain) findPrevTestNetDifficulty(startNode *blockNode) (uint32,
 	error) {
 	// Search backwards through the chain for the last block without
@@ -214,7 +212,7 @@ func (b *BlockChain) findPrevTestNetDifficulty(startNode *blockNode) (uint32,
 		b.chainParams.WorkDiffWindows
 	iterNode := startNode
 	for iterNode != nil && iterNode.height%blocksPerRetarget != 0 &&
-		iterNode.header.Bits == b.chainParams.PowLimitBits {
+		iterNode.bits == b.chainParams.PowLimitBits {
 
 		// Get the previous block node.  This function is used over
 		// simply accessing iterNode.parent directly as it will
@@ -233,7 +231,7 @@ func (b *BlockChain) findPrevTestNetDifficulty(startNode *blockNode) (uint32,
 	// appropriate block was found.
 	lastBits := b.chainParams.PowLimitBits
 	if iterNode != nil {
-		lastBits = iterNode.header.Bits
+		lastBits = iterNode.bits
 	}
 	return lastBits, nil
 }
@@ -243,8 +241,6 @@ func (b *BlockChain) findPrevTestNetDifficulty(startNode *blockNode) (uint32,
 // This function differs from the exported CalcNextRequiredDifficulty in that
 // the exported version uses the current best chain as the previous block node
 // while this function accepts any block node.
-//
-// This function MUST be called with the chain state lock held (for writes).
 func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
 	newBlockTime time.Time) (uint32, error) {
 	// Genesis block.
@@ -266,13 +262,13 @@ func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
 			// Return minimum difficulty when more than twice the
 			// desired amount of time needed to generate a block has
 			// elapsed.
-			allowMinTime := curNode.header.Timestamp.Add(
-				b.chainParams.TimePerBlock * b.chainParams.MinDiffResetTimeFactor)
+			allowMinTime := curNode.timestamp.Add(b.chainParams.TimePerBlock *
+				b.chainParams.MinDiffResetTimeFactor)
 
 			// For every extra target timespan that passes, we halve the
 			// difficulty.
 			if newBlockTime.After(allowMinTime) {
-				timePassed := newBlockTime.Sub(curNode.header.Timestamp)
+				timePassed := newBlockTime.Sub(curNode.timestamp)
 				timePassed -= (b.chainParams.TimePerBlock *
 					b.chainParams.MinDiffResetTimeFactor)
 				shifts := uint((timePassed / b.chainParams.TimePerBlock) + 1)
@@ -451,13 +447,10 @@ func (b *BlockChain) CalcNextRequiredDiffFromNode(hash *chainhash.Hash,
 // after the end of the current best chain based on the difficulty retarget
 // rules.
 //
-// This function is safe for concurrent access.
+// This function is NOT safe for concurrent access.
 func (b *BlockChain) CalcNextRequiredDifficulty(timestamp time.Time) (uint32,
 	error) {
-	b.chainLock.Lock()
-	difficulty, err := b.calcNextRequiredDifficulty(b.bestNode, timestamp)
-	b.chainLock.Unlock()
-	return difficulty, err
+	return b.calcNextRequiredDifficulty(b.bestChain, timestamp)
 }
 
 // mergeDifficulty takes an original stake difficulty and two new, scaled
@@ -747,7 +740,7 @@ func (b *BlockChain) calcNextRequiredStakeDifficulty(curNode *blockNode) (int64,
 // CalcNextRequiredStakeDifficulty is the exported version of the above function.
 // This function is NOT safe for concurrent access.
 func (b *BlockChain) CalcNextRequiredStakeDifficulty() (int64, error) {
-	return b.calcNextRequiredStakeDifficulty(b.bestNode)
+	return b.calcNextRequiredStakeDifficulty(b.bestChain)
 }
 
 // estimateNextStakeDifficulty returns a user-specified estimate for the next
@@ -838,6 +831,7 @@ func (b *BlockChain) estimateNextStakeDifficulty(curNode *blockNode,
 			thisNode.hash = &emptyHeaderHash
 			thisNode.height = i
 			thisNode.parent = topNode
+			thisNode.parentHash = topNode.hash
 			topNode = thisNode
 		}
 	}
@@ -1068,6 +1062,6 @@ func (b *BlockChain) estimateNextStakeDifficulty(curNode *blockNode,
 // This function is NOT safe for concurrent access.
 func (b *BlockChain) EstimateNextStakeDifficulty(ticketsInWindow int64,
 	useMaxTickets bool) (int64, error) {
-	return b.estimateNextStakeDifficulty(b.bestNode, ticketsInWindow,
+	return b.estimateNextStakeDifficulty(b.bestChain, ticketsInWindow,
 		useMaxTickets)
 }

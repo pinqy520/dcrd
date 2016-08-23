@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2014 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,7 +11,6 @@ import (
 
 	"github.com/decred/dcrd/blockchain/stake"
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/database"
 )
 
 // GetNextWinningTickets returns the next tickets eligible for spending as SSGen
@@ -20,7 +19,7 @@ import (
 func (b *BlockChain) GetNextWinningTickets() ([]chainhash.Hash, int, [6]byte,
 	error) {
 	winningTickets, poolSize, finalState, _, err :=
-		b.getWinningTicketsWithStore(b.bestNode)
+		b.getWinningTicketsWithStore(b.bestChain)
 	if err != nil {
 		return nil, 0, [6]byte{}, err
 	}
@@ -63,14 +62,9 @@ func (b *BlockChain) getWinningTicketsWithStore(node *blockNode) ([]chainhash.Ha
 	}
 
 	if ticketStore != nil {
-		view := NewUtxoViewpoint()
-		view.SetBestHash(node.hash)
-		view.SetStakeViewpoint(ViewpointPrevValidInitial)
-		parent, err := b.getBlockFromHash(&node.header.PrevBlock)
-		if err != nil {
-			return nil, 0, [6]byte{}, nil, err
-		}
-		err = view.fetchInputUtxos(b.db, block, parent)
+		// We need the viewpoint of spendable tickets given that the
+		// current block was actually added.
+		err = b.connectTickets(ticketStore, node, block)
 		if err != nil {
 			return nil, 0, [6]byte{}, nil, err
 		}
@@ -183,8 +177,7 @@ func (b *BlockChain) getWinningTicketsInclStore(node *blockNode,
 	totalTickets := 0
 	var sortedSlice []*stake.TicketData
 	for i := 0; i < stake.BucketsSize; i++ {
-		ltb, err := b.GenerateLiveTicketBucket(ticketStore, tpdBucketMap,
-			uint8(i))
+		ltb, err := b.GenerateLiveTicketBucket(ticketStore, tpdBucketMap, uint8(i))
 		if err != nil {
 			h := node.hash
 			str := fmt.Sprintf("Failed to generate a live ticket bucket "+
@@ -236,13 +229,9 @@ func (b *BlockChain) getWinningTicketsInclStore(node *blockNode,
 
 // GetWinningTickets takes a node block hash and returns the next tickets
 // eligible for spending as SSGen.
-//
-// This function is safe for concurrent access.
+// This function is NOT safe for concurrent access.
 func (b *BlockChain) GetWinningTickets(nodeHash chainhash.Hash) ([]chainhash.Hash,
 	int, [6]byte, error) {
-	b.chainLock.Lock()
-	defer b.chainLock.Unlock()
-
 	var node *blockNode
 	if n, exists := b.index[nodeHash]; exists {
 		node = n
@@ -264,21 +253,9 @@ func (b *BlockChain) GetWinningTickets(nodeHash chainhash.Hash) ([]chainhash.Has
 }
 
 // GetMissedTickets returns a list of currently missed tickets.
-//
 // This function is NOT safe for concurrent access.
 func (b *BlockChain) GetMissedTickets() []chainhash.Hash {
 	missedTickets := b.tmdb.GetTicketHashesForMissed()
 
 	return missedTickets
-}
-
-// DB passes the pointer to the database. It is only to be used by testing.
-func (b *BlockChain) DB() database.DB {
-	return b.db
-}
-
-// TMDB passes the pointer to the ticket database. It is only to be used by
-// testing.
-func (b *BlockChain) TMDB() *stake.TicketDB {
-	return b.tmdb
 }

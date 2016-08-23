@@ -1,5 +1,5 @@
-// Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2013-2014 The btcsuite developers
+// Copyright (c) 2015 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -15,6 +15,7 @@ import (
 	"github.com/decred/dcrd/blockchain"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/database"
+	_ "github.com/decred/dcrd/database/ldb"
 	"github.com/decred/dcrd/wire"
 	"github.com/decred/dcrutil"
 )
@@ -31,7 +32,7 @@ type importResults struct {
 // blockImporter houses information about an ongoing import from a block data
 // file to the block database.
 type blockImporter struct {
-	db                database.DB
+	db                database.Db
 	chain             *blockchain.BlockChain
 	medianTime        blockchain.MedianTimeSource
 	r                 io.ReadSeeker
@@ -106,7 +107,7 @@ func (bi *blockImporter) processBlock(serializedBlock []byte) (bool, error) {
 
 	// Skip blocks that already exist.
 	blockSha := block.Sha()
-	exists, err := bi.chain.HaveBlock(blockSha)
+	exists, err := bi.db.ExistsSha(blockSha)
 	if err != nil {
 		return false, err
 	}
@@ -117,7 +118,7 @@ func (bi *blockImporter) processBlock(serializedBlock []byte) (bool, error) {
 	// Don't bother trying to process orphans.
 	prevHash := &block.MsgBlock().Header.PrevBlock
 	if !prevHash.IsEqual(&zeroHash) {
-		exists, err := bi.chain.HaveBlock(prevHash)
+		exists, err := bi.db.ExistsSha(prevHash)
 		if err != nil {
 			return false, err
 		}
@@ -296,15 +297,7 @@ func (bi *blockImporter) Import() chan *importResults {
 
 // newBlockImporter returns a new importer for the provided file reader seeker
 // and database.
-func newBlockImporter(db database.DB, r io.ReadSeeker) (*blockImporter, error) {
-	chain, err := blockchain.New(&blockchain.Config{
-		DB:          db,
-		ChainParams: activeNetParams,
-	})
-	if err != nil {
-		return nil, err
-	}
-
+func newBlockImporter(db database.Db, r io.ReadSeeker) *blockImporter {
 	return &blockImporter{
 		db:           db,
 		r:            r,
@@ -312,8 +305,8 @@ func newBlockImporter(db database.DB, r io.ReadSeeker) (*blockImporter, error) {
 		doneChan:     make(chan bool),
 		errChan:      make(chan error),
 		quit:         make(chan struct{}),
-		chain:        chain,
+		chain:        blockchain.New(db, nil, activeNetParams, nil, nil),
 		medianTime:   blockchain.NewMedianTime(),
 		lastLogTime:  time.Now(),
-	}, nil
+	}
 }

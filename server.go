@@ -6,7 +6,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -23,7 +22,6 @@ import (
 
 	"github.com/decred/dcrd/addrmgr"
 	"github.com/decred/dcrd/blockchain"
-	"github.com/decred/dcrd/blockchain/indexers"
 	"github.com/decred/dcrd/blockchain/stake"
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
@@ -103,7 +101,7 @@ type relayMsg struct {
 // selecting sync peer candidacy.
 type updatePeerHeightsMsg struct {
 	newSha     *chainhash.Hash
-	newHeight  int64
+	newHeight  int32
 	originPeer *serverPeer
 }
 
@@ -186,6 +184,7 @@ type server struct {
 	sigCache             *txscript.SigCache
 	rpcServer            *rpcServer
 	blockManager         *blockManager
+	addrIndexer          *addrIndexer
 	txMemPool            *txMemPool
 	cpuMiner             *CPUMiner
 	modifyRebroadcastInv chan interface{}
@@ -202,18 +201,10 @@ type server struct {
 	wg                   sync.WaitGroup
 	quit                 chan struct{}
 	nat                  NAT
-	db                   database.DB
+	db                   database.Db
 	timeSource           blockchain.MedianTimeSource
 	tmdb                 *stake.TicketDB
 	services             wire.ServiceFlag
-
-	// The following fields are used for optional indexes.  They will be nil
-	// if the associated index is not enabled.  These fields are set during
-	// initial creation of the server and never changed afterwards, so they
-	// do not need to be protected for concurrent access.
-	txIndex         *indexers.TxIndex
-	addrIndex       *indexers.AddrIndex
-	existsAddrIndex *indexers.ExistsAddrIndex
 }
 
 // serverPeer extends the peer to maintain state shared by the server and
@@ -253,13 +244,6 @@ func newServerPeer(s *server, isPersistent bool) *serverPeer {
 		txProcessed:     make(chan struct{}, 1),
 		blockProcessed:  make(chan struct{}, 1),
 	}
-}
-
-// newestBlock returns the current best block hash and height using the format
-// required by the configuration for the peer package.
-func (sp *serverPeer) newestBlock() (*chainhash.Hash, int64, error) {
-	best := sp.server.blockManager.chain.BestSnapshot()
-	return best.Hash, best.Height, nil
 }
 
 // addKnownAddresses adds the given addresses to the set of known addreses to
@@ -747,13 +731,14 @@ func (sp *serverPeer) OnGetData(p *peer.Peer, msg *wire.MsgGetData) {
 
 // OnGetBlocks is invoked when a peer receives a getblocks wire message.
 func (sp *serverPeer) OnGetBlocks(p *peer.Peer, msg *wire.MsgGetBlocks) {
+	db := sp.server.db
+
 	// Return all block hashes to the latest one (up to max per message) if
 	// no stop hash was specified.
 	// Attempt to find the ending index of the stop hash if specified.
-	chain := sp.server.blockManager.chain
-	endIdx := int64(math.MaxInt64)
+	endIdx := database.AllShas
 	if !msg.HashStop.IsEqual(&zeroHash) {
-		height, err := chain.BlockHeightByHash(&msg.HashStop)
+		height, err := db.FetchBlockHeightBySha(&msg.HashStop)
 		if err == nil {
 			endIdx = height + 1
 		}
@@ -766,7 +751,7 @@ func (sp *serverPeer) OnGetBlocks(p *peer.Peer, msg *wire.MsgGetBlocks) {
 	// This mirrors the behavior in the reference implementation.
 	startIdx := int64(1)
 	for _, hash := range msg.BlockLocatorHashes {
-		height, err := chain.BlockHeightByHash(hash)
+		height, err := db.FetchBlockHeightBySha(hash)
 		if err == nil {
 			// Start with the next hash since we know this one.
 			startIdx = height + 1
@@ -781,18 +766,34 @@ func (sp *serverPeer) OnGetBlocks(p *peer.Peer, msg *wire.MsgGetBlocks) {
 		autoContinue = true
 	}
 
-	// Fetch the inventory from the block database.
-	hashList, err := chain.HeightRange(startIdx, endIdx)
-	if err != nil {
-		peerLog.Warnf("Block lookup failed: %v", err)
-		return
-	}
-
 	// Generate inventory message.
+	//
+	// The FetchBlockBySha call is limited to a maximum number of hashes
+	// per invocation.  Since the maximum number of inventory per message
+	// might be larger, call it multiple times with the appropriate indices
+	// as needed.
 	invMsg := wire.NewMsgInv()
-	for i := range hashList {
-		iv := wire.NewInvVect(wire.InvTypeBlock, &hashList[i])
-		invMsg.AddInvVect(iv)
+	for start := startIdx; start < endIdx; {
+		// Fetch the inventory from the block database.
+		hashList, err := db.FetchHeightRange(start, endIdx)
+		if err != nil {
+			peerLog.Warnf("Block lookup failed: %v", err)
+			return
+		}
+
+		// The database did not return any further hashes.  Break out of
+		// the loop now.
+		if len(hashList) == 0 {
+			break
+		}
+
+		// Add block inventory to the message.
+		for _, hash := range hashList {
+			hashCopy := hash
+			iv := wire.NewInvVect(wire.InvTypeBlock, &hashCopy)
+			invMsg.AddInvVect(iv)
+		}
+		start += int64(len(hashList))
 	}
 
 	// Send the inventory message if there is anything to send.
@@ -817,10 +818,11 @@ func (sp *serverPeer) OnGetHeaders(p *peer.Peer, msg *wire.MsgGetHeaders) {
 		return
 	}
 
+	db := sp.server.db
+
 	// Attempt to look up the height of the provided stop hash.
-	chain := sp.server.blockManager.chain
-	endIdx := int64(math.MaxInt64)
-	height, err := chain.BlockHeightByHash(&msg.HashStop)
+	endIdx := database.AllShas
+	height, err := db.FetchBlockHeightBySha(&msg.HashStop)
 	if err == nil {
 		endIdx = height + 1
 	}
@@ -831,34 +833,20 @@ func (sp *serverPeer) OnGetHeaders(p *peer.Peer, msg *wire.MsgGetHeaders) {
 		// No blocks with the stop hash were found so there is nothing
 		// to do.  Just return.  This behavior mirrors the reference
 		// implementation.
-		if endIdx == math.MaxInt64 {
+		if endIdx == database.AllShas {
 			return
 		}
 
-		// Fetch the raw block header bytes from the database.
-		var headerBytes []byte
-		err := sp.server.db.View(func(dbTx database.Tx) error {
-			var err error
-			headerBytes, err = dbTx.FetchBlockHeader(&msg.HashStop)
-			return err
-		})
+		// Fetch and send the requested block header.
+		header, err := db.FetchBlockHeaderBySha(&msg.HashStop)
 		if err != nil {
 			peerLog.Warnf("Lookup of known block hash failed: %v",
 				err)
 			return
 		}
 
-		// Deserialize the block header.
-		var header wire.BlockHeader
-		err = header.Deserialize(bytes.NewReader(headerBytes))
-		if err != nil {
-			peerLog.Warnf("Block header deserialize failed: %v",
-				err)
-			return
-		}
-
 		headersMsg := wire.NewMsgHeaders()
-		headersMsg.AddBlockHeader(&header)
+		headersMsg.AddBlockHeader(header)
 		p.QueueMessage(headersMsg, nil)
 		return
 	}
@@ -870,7 +858,7 @@ func (sp *serverPeer) OnGetHeaders(p *peer.Peer, msg *wire.MsgGetHeaders) {
 	// This mirrors the behavior in the reference implementation.
 	startIdx := int64(1)
 	for _, hash := range msg.BlockLocatorHashes {
-		height, err := chain.BlockHeightByHash(hash)
+		height, err := db.FetchBlockHeightBySha(hash)
 		if err == nil {
 			// Start with the next hash since we know this one.
 			startIdx = height + 1
@@ -883,37 +871,42 @@ func (sp *serverPeer) OnGetHeaders(p *peer.Peer, msg *wire.MsgGetHeaders) {
 		endIdx = startIdx + wire.MaxBlockHeadersPerMsg
 	}
 
-	// Fetch the inventory from the block database.
-	hashList, err := chain.HeightRange(startIdx, endIdx)
-	if err != nil {
-		peerLog.Warnf("Header lookup failed: %v", err)
-		return
-	}
-
 	// Generate headers message and send it.
+	//
+	// The FetchHeightRange call is limited to a maximum number of hashes
+	// per invocation.  Since the maximum number of headers per message
+	// might be larger, call it multiple times with the appropriate indices
+	// as needed.
 	headersMsg := wire.NewMsgHeaders()
-	err = sp.server.db.View(func(dbTx database.Tx) error {
-		for i := range hashList {
-			headerBytes, err := dbTx.FetchBlockHeader(&hashList[i])
-			if err != nil {
-				return err
-			}
-
-			var header wire.BlockHeader
-			err = header.Deserialize(bytes.NewReader(headerBytes))
-			if err != nil {
-				return err
-			}
-			headersMsg.AddBlockHeader(&header)
+	for start := startIdx; start < endIdx; {
+		// Fetch the inventory from the block database.
+		hashList, err := db.FetchHeightRange(start, endIdx)
+		if err != nil {
+			peerLog.Warnf("Header lookup failed: %v", err)
+			return
 		}
 
-		return nil
-	})
-	if err != nil {
-		peerLog.Warnf("Failed to build headers: %v", err)
-		return
-	}
+		// The database did not return any further hashes.  Break out of
+		// the loop now.
+		if len(hashList) == 0 {
+			break
+		}
 
+		// Add headers to the message.
+		for _, hash := range hashList {
+			header, err := db.FetchBlockHeaderBySha(&hash)
+			if err != nil {
+				peerLog.Warnf("Lookup of known block hash "+
+					"failed: %v", err)
+				continue
+			}
+			headersMsg.AddBlockHeader(header)
+		}
+
+		// Start at the next block header after the latest one on the
+		// next loop iteration.
+		start += int64(len(hashList))
+	}
 	p.QueueMessage(headersMsg, nil)
 }
 
@@ -1108,10 +1101,7 @@ func (s *server) pushTxMsg(sp *serverPeer, sha *chainhash.Hash, doneChan chan<- 
 	// Attempt to fetch the requested transaction from the pool.  A
 	// call could be made to check for existence first, but simply trying
 	// to fetch a missing transaction results in the same behavior.
-	// Do not allow peers to request transactions already in a block
-	// but are unconfirmed, as they may be expensive. Restrict that
-	// to the authenticated RPC only.
-	tx, err := s.txMemPool.FetchTransaction(sha, false)
+	tx, err := s.txMemPool.FetchTransaction(sha)
 	if err != nil {
 		peerLog.Tracef("Unable to fetch tx %v from transaction "+
 			"pool: %v", sha, err)
@@ -1134,11 +1124,11 @@ func (s *server) pushTxMsg(sp *serverPeer, sha *chainhash.Hash, doneChan chan<- 
 
 // pushBlockMsg sends a block message for the provided block hash to the
 // connected peer.  An error is returned if the block hash is not known.
-func (s *server) pushBlockMsg(sp *serverPeer, hash *chainhash.Hash, doneChan chan<- struct{}, waitChan <-chan struct{}) error {
-	block, err := sp.server.blockManager.chain.GetBlockFromHash(hash)
+func (s *server) pushBlockMsg(sp *serverPeer, sha *chainhash.Hash, doneChan chan<- struct{}, waitChan <-chan struct{}) error {
+	blk, err := s.blockManager.GetBlockFromHash(*sha)
 	if err != nil {
-		peerLog.Tracef("Unable to fetch requested block hash %v: %v",
-			hash, err)
+		peerLog.Tracef("Unable to fetch requested block sha %v: %v",
+			sha, err)
 
 		if doneChan != nil {
 			doneChan <- struct{}{}
@@ -1155,11 +1145,11 @@ func (s *server) pushBlockMsg(sp *serverPeer, hash *chainhash.Hash, doneChan cha
 	// an inv straight after.
 	var dc chan<- struct{}
 	continueHash := sp.continueHash
-	sendInv := continueHash != nil && continueHash.IsEqual(hash)
+	sendInv := continueHash != nil && continueHash.IsEqual(sha)
 	if !sendInv {
 		dc = doneChan
 	}
-	sp.QueueMessage(block.MsgBlock(), dc)
+	sp.QueueMessage(blk.MsgBlock(), dc)
 
 	// When the peer requests the final block that was advertised in
 	// response to a getblocks message which requested more blocks than
@@ -1167,12 +1157,16 @@ func (s *server) pushBlockMsg(sp *serverPeer, hash *chainhash.Hash, doneChan cha
 	// to trigger it to issue another getblocks message for the next
 	// batch of inventory.
 	if sendInv {
-		best := sp.server.blockManager.chain.BestSnapshot()
-		invMsg := wire.NewMsgInvSizeHint(1)
-		iv := wire.NewInvVect(wire.InvTypeBlock, best.Hash)
-		invMsg.AddInvVect(iv)
-		sp.QueueMessage(invMsg, doneChan)
-		sp.continueHash = nil
+		hash, _, err := s.db.NewestSha()
+		if err == nil {
+			invMsg := wire.NewMsgInvSizeHint(1)
+			iv := wire.NewInvVect(wire.InvTypeBlock, hash)
+			invMsg.AddInvVect(iv)
+			sp.QueueMessage(invMsg, doneChan)
+			sp.continueHash = nil
+		} else if doneChan != nil {
+			doneChan <- struct{}{}
+		}
 	}
 	return nil
 }
@@ -1181,7 +1175,7 @@ func (s *server) pushBlockMsg(sp *serverPeer, hash *chainhash.Hash, doneChan cha
 // the connected peer.  Since a merkle block requires the peer to have a filter
 // loaded, this call will simply be ignored if there is no filter loaded.  An
 // error is returned if the block hash is not known.
-func (s *server) pushMerkleBlockMsg(sp *serverPeer, hash *chainhash.Hash, doneChan chan<- struct{}, waitChan <-chan struct{}) error {
+func (s *server) pushMerkleBlockMsg(sp *serverPeer, sha *chainhash.Hash, doneChan chan<- struct{}, waitChan <-chan struct{}) error {
 	// Do not send a response if the peer doesn't have a filter loaded.
 	if !sp.filter.IsLoaded() {
 		if doneChan != nil {
@@ -1190,11 +1184,10 @@ func (s *server) pushMerkleBlockMsg(sp *serverPeer, hash *chainhash.Hash, doneCh
 		return nil
 	}
 
-	// Fetch the raw block bytes from the database.
-	blk, err := sp.server.blockManager.chain.BlockByHash(hash)
+	blk, err := s.blockManager.GetBlockFromHash(*sha)
 	if err != nil {
-		peerLog.Tracef("Unable to fetch requested block hash %v: %v",
-			hash, err)
+		peerLog.Tracef("Unable to fetch requested block sha %v: %v",
+			sha, err)
 
 		if doneChan != nil {
 			doneChan <- struct{}{}
@@ -1257,7 +1250,7 @@ func (s *server) handleUpdatePeerHeights(state *peerState, umsg updatePeerHeight
 		// matches our newly accepted block, then update their block
 		// height.
 		if *latestBlkSha == *umsg.newSha {
-			sp.UpdateLastBlockHeight(int64(umsg.newHeight))
+			sp.UpdateLastBlockHeight(umsg.newHeight)
 			sp.UpdateLastAnnouncedBlock(nil)
 		}
 	})
@@ -1621,7 +1614,7 @@ func newPeerConfig(sp *serverPeer) *peer.Config {
 			OnRead:           sp.OnRead,
 			OnWrite:          sp.OnWrite,
 		},
-		NewestBlock:      sp.newestBlock,
+		NewestBlock:      sp.server.db.NewestSha,
 		BestLocalAddress: sp.server.addrManager.GetBestLocalAddress,
 		HostToNetAddress: sp.server.addrManager.HostToNetAddress,
 		Proxy:            cfg.Proxy,
@@ -1958,6 +1951,9 @@ out:
 		}
 	}
 
+	if !cfg.NoAddrIndex {
+		s.addrIndexer.Stop()
+	}
 	s.blockManager.Stop()
 	s.addrManager.Stop()
 
@@ -2120,7 +2116,7 @@ func (s *server) NetTotals() (uint64, uint64) {
 // the latest connected main chain block, or a recognized orphan. These height
 // updates allow us to dynamically refresh peer heights, ensuring sync peer
 // selection has access to the latest block heights for each peer.
-func (s *server) UpdatePeerHeights(latestBlkSha *chainhash.Hash, latestHeight int64, updateSource *serverPeer) {
+func (s *server) UpdatePeerHeights(latestBlkSha *chainhash.Hash, latestHeight int32, updateSource *serverPeer) {
 	s.peerHeightsUpdate <- updatePeerHeightsMsg{
 		newSha:     latestBlkSha,
 		newHeight:  latestHeight,
@@ -2225,6 +2221,10 @@ func (s *server) Start() {
 	// Start the CPU miner if generation is enabled.
 	if cfg.Generate {
 		s.cpuMiner.Start()
+	}
+
+	if !cfg.NoAddrIndex {
+		s.addrIndexer.Start()
 	}
 }
 
@@ -2413,7 +2413,8 @@ out:
 // newServer returns a new dcrd server configured to listen on addr for the
 // decred network type specified by chainParams.  Use start to begin accepting
 // connections from peers.
-func newServer(listenAddrs []string, db database.DB, tmdb *stake.TicketDB, chainParams *chaincfg.Params) (*server, error) {
+func newServer(listenAddrs []string, database database.Db, tmdb *stake.TicketDB,
+	chainParams *chaincfg.Params) (*server, error) {
 
 	services := defaultServices
 	if cfg.NoPeerBloomFilters {
@@ -2562,59 +2563,22 @@ func newServer(listenAddrs []string, db database.DB, tmdb *stake.TicketDB, chain
 		modifyRebroadcastInv: make(chan interface{}),
 		peerHeightsUpdate:    make(chan updatePeerHeightsMsg),
 		nat:                  nat,
-		db:                   db,
+		db:                   database,
 		tmdb:                 tmdb,
 		timeSource:           blockchain.NewMedianTime(),
 		services:             services,
 		sigCache:             txscript.NewSigCache(cfg.SigCacheMaxSize),
 	}
-
-	// Create the transaction and address indexes if needed.
-	//
-	// CAUTION: the txindex needs to be first in the indexes array because
-	// the addrindex uses data from the txindex during catchup.  If the
-	// addrindex is run first, it may not have the transactions from the
-	// current block indexed.
-	var indexes []indexers.Indexer
-	if cfg.TxIndex || cfg.AddrIndex {
-		// Enable transaction index if address index is enabled since it
-		// requires it.
-		if !cfg.TxIndex {
-			indxLog.Infof("Transaction index enabled because it " +
-				"is required by the address index")
-			cfg.TxIndex = true
-		} else {
-			indxLog.Info("Transaction index is enabled")
-		}
-
-		s.txIndex = indexers.NewTxIndex(db)
-		indexes = append(indexes, s.txIndex)
-	}
-	if cfg.AddrIndex {
-		indxLog.Info("Address index is enabled")
-		s.addrIndex = indexers.NewAddrIndex(db, chainParams)
-		indexes = append(indexes, s.addrIndex)
-	}
-	if !cfg.NoExistsAddrIndex {
-		indxLog.Info("Exists address index is enabled")
-		s.existsAddrIndex = indexers.NewExistsAddrIndex(db, chainParams)
-		indexes = append(indexes, s.existsAddrIndex)
-	}
-
-	// Create an index manager if any of the optional indexes are enabled.
-	var indexManager blockchain.IndexManager
-	if len(indexes) > 0 {
-		indexManager = indexers.NewManager(db, indexes, chainParams)
-	}
-	bm, err := newBlockManager(&s, indexManager)
+	bm, err := newBlockManager(&s)
 	if err != nil {
 		return nil, err
 	}
 	s.blockManager = bm
 
 	txC := mempoolConfig{
-		ChainParams: chainParams,
-		// EnableAddrIndex: !cfg.NoAddrIndex, TODO
+		ChainParams:           chainParams,
+		EnableAddrIndex:       !cfg.NoAddrIndex,
+		FetchTransactionStore: s.blockManager.blockChain.FetchTransactionStore,
 		NewestSha: func() (*chainhash.Hash, int64, error) {
 			bm.chainState.Lock()
 			hash := bm.chainState.newestHash
@@ -2628,7 +2592,6 @@ func newServer(listenAddrs []string, db database.DB, tmdb *stake.TicketDB, chain
 			bm.chainState.Unlock()
 			return sDiff, nil
 		},
-
 		Policy: mempoolPolicy{
 			DisableRelayPriority: cfg.NoRelayPriority,
 			FreeTxRelayLimit:     cfg.FreeTxRelayLimit,
@@ -2637,12 +2600,8 @@ func newServer(listenAddrs []string, db database.DB, tmdb *stake.TicketDB, chain
 			MaxSigOpsPerTx:       blockchain.MaxSigOpsPerBlock / 5,
 			MinRelayTxFee:        cfg.minRelayTxFee,
 		},
-		FetchUtxoView:   s.blockManager.chain.FetchUtxoView,
-		Chain:           s.blockManager.chain,
-		SigCache:        s.sigCache,
-		TimeSource:      s.timeSource,
-		AddrIndex:       s.addrIndex,
-		ExistsAddrIndex: s.existsAddrIndex,
+		SigCache:   s.sigCache,
+		TimeSource: s.timeSource,
 	}
 	s.txMemPool = newTxMemPool(&txC)
 
@@ -2656,6 +2615,14 @@ func newServer(listenAddrs []string, db database.DB, tmdb *stake.TicketDB, chain
 		TxMinFreeFee:      cfg.minRelayTxFee,
 	}
 	s.cpuMiner = newCPUMiner(&policy, &s)
+
+	if !cfg.NoAddrIndex {
+		ai, err := newAddrIndexer(&s)
+		if err != nil {
+			return nil, err
+		}
+		s.addrIndexer = ai
+	}
 
 	if !cfg.DisableRPC {
 		s.rpcServer, err = newRPCServer(cfg.RPCListeners, &policy, &s)

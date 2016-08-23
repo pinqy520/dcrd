@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2013-2015 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -80,7 +80,7 @@ func calcMinRequiredTxRelayFee(serializedSize int64, minRelayTxFee dcrutil.Amoun
 // of each of its input values multiplied by their age (# of confirmations).
 // Thus, the final formula for the priority is:
 // sum(inputValue * inputAge) / adjustedTxSize
-func calcPriority(tx *wire.MsgTx, utxoView *blockchain.UtxoViewpoint, nextBlockHeight int64) float64 {
+func calcPriority(tx *wire.MsgTx, txStore blockchain.TxStore, nextBlockHeight int64) float64 {
 	// In order to encourage spending multiple old unspent transaction
 	// outputs thereby reducing the total set, don't count the constant
 	// overhead for each input as well as enough bytes of the signature
@@ -112,7 +112,7 @@ func calcPriority(tx *wire.MsgTx, utxoView *blockchain.UtxoViewpoint, nextBlockH
 		return 0.0
 	}
 
-	inputValueAge := calcInputValueAge(tx, utxoView, nextBlockHeight)
+	inputValueAge := calcInputValueAge(tx, txStore, nextBlockHeight)
 	return inputValueAge / float64(serializedTxSize-overhead)
 }
 
@@ -122,29 +122,31 @@ func calcPriority(tx *wire.MsgTx, utxoView *blockchain.UtxoViewpoint, nextBlockH
 // age is the sum of this value for each txin.  Any inputs to the transaction
 // which are currently in the mempool and hence not mined into a block yet,
 // contribute no additional input age to the transaction.
-func calcInputValueAge(tx *wire.MsgTx, utxoView *blockchain.UtxoViewpoint, nextBlockHeight int64) float64 {
+func calcInputValueAge(tx *wire.MsgTx, txStore blockchain.TxStore,
+	nextBlockHeight int64) float64 {
+
 	var totalInputAge float64
 	for _, txIn := range tx.TxIn {
-		// Don't attempt to accumulate the total input age if the
-		// referenced transaction output doesn't exist.
 		originHash := &txIn.PreviousOutPoint.Hash
 		originIndex := txIn.PreviousOutPoint.Index
-		txEntry := utxoView.LookupEntry(originHash)
-		if txEntry != nil && !txEntry.IsOutputSpent(originIndex) {
+
+		// Don't attempt to accumulate the total input age if the txIn
+		// in question doesn't exist.
+		if txData, exists := txStore[*originHash]; exists && txData.Tx != nil {
 			// Inputs with dependencies currently in the mempool
 			// have their block height set to a special constant.
-			// Their input age should be computed as zero since
-			// their parent hasn't made it into a block yet.
+			// Their input age should computed as zero since their
+			// parent hasn't made it into a block yet.
 			var inputAge int64
-			originHeight := txEntry.BlockHeight()
-			if originHeight == mempoolHeight {
+			if txData.BlockHeight == mempoolHeight {
 				inputAge = 0
 			} else {
-				inputAge = nextBlockHeight - originHeight
+				inputAge = nextBlockHeight - txData.BlockHeight
 			}
 
 			// Sum the input value times age.
-			inputValue := txEntry.AmountByIndex(originIndex)
+			originTxOut := txData.Tx.MsgTx().TxOut[originIndex]
+			inputValue := originTxOut.Value
 			totalInputAge += float64(inputValue * inputAge)
 		}
 	}
@@ -159,7 +161,10 @@ func calcInputValueAge(tx *wire.MsgTx, utxoView *blockchain.UtxoViewpoint, nextB
 // exhaustion attacks by "creative" use of scripts that are super expensive to
 // process like OP_DUP OP_CHECKSIG OP_DROP repeated a large number of times
 // followed by a final OP_TRUE.
-func checkInputsStandard(tx *dcrutil.Tx, txType stake.TxType, utxoView *blockchain.UtxoViewpoint) error {
+// Decred TODO: I think this is okay, but we'll see with simnet.
+func checkInputsStandard(tx *dcrutil.Tx, txType stake.TxType,
+	txStore blockchain.TxStore) error {
+
 	// NOTE: The reference implementation also does a coinbase check here,
 	// but coinbases have already been rejected prior to calling this
 	// function so no need to recheck.
@@ -173,8 +178,8 @@ func checkInputsStandard(tx *dcrutil.Tx, txType stake.TxType, utxoView *blockcha
 		// they have already been checked prior to calling this
 		// function.
 		prevOut := txIn.PreviousOutPoint
-		entry := utxoView.LookupEntry(&prevOut.Hash)
-		originPkScript := entry.PkScriptByIndex(prevOut.Index)
+		originTx := txStore[prevOut.Hash].Tx.MsgTx()
+		originPkScript := originTx.TxOut[prevOut.Index].PkScript
 
 		// Calculate stats for the script pair.
 		scriptInfo, err := txscript.CalcScriptInfo(txIn.SignatureScript,
@@ -274,7 +279,7 @@ func checkPkScriptStandard(version uint16, pkScript []byte,
 // minimum transaction relay fee, it is considered dust.
 func isDust(txOut *wire.TxOut, minRelayTxFee dcrutil.Amount) bool {
 	// Unspendable outputs are considered dust.
-	if txscript.IsUnspendable(txOut.Value, txOut.PkScript) {
+	if txscript.IsUnspendable(txOut.PkScript) {
 		return true
 	}
 

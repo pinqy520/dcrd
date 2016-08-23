@@ -1,5 +1,5 @@
-// Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2013-2014 The btcsuite developers
+// Copyright (c) 2015 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -16,7 +16,6 @@ import (
 
 	"github.com/decred/dcrd/addrmgr"
 	"github.com/decred/dcrd/blockchain"
-	"github.com/decred/dcrd/blockchain/indexers"
 	"github.com/decred/dcrd/blockchain/stake"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/database"
@@ -44,7 +43,6 @@ var (
 	dcrdLog    = btclog.Disabled
 	chanLog    = btclog.Disabled
 	discLog    = btclog.Disabled
-	indxLog    = btclog.Disabled
 	minrLog    = btclog.Disabled
 	peerLog    = btclog.Disabled
 	rpcsLog    = btclog.Disabled
@@ -63,7 +61,6 @@ var subsystemLoggers = map[string]btclog.Logger{
 	"DCRD": dcrdLog,
 	"CHAN": chanLog,
 	"DISC": discLog,
-	"INDX": indxLog,
 	"MINR": minrLog,
 	"PEER": peerLog,
 	"RPCS": rpcsLog,
@@ -121,10 +118,6 @@ func useLogger(subsystemID string, logger btclog.Logger) {
 
 	case "DISC":
 		discLog = logger
-
-	case "INDX":
-		indxLog = logger
-		indexers.UseLogger(logger)
 
 	case "MINR":
 		minrLog = logger

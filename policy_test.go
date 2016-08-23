@@ -219,7 +219,7 @@ func TestDust(t *testing.T) {
 			"zero value with zero relay fee",
 			wire.TxOut{Value: 0, Version: 0, PkScript: pkScript},
 			0,
-			true,
+			false,
 		},
 		{
 			// Zero value is dust with any relay fee"
