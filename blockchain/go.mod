@@ -1,3 +1,3 @@
-module github.com/decred/dcrd/blockchain
+module github.com/pinqy520/dcrd/blockchain
 
-require github.com/decred/dcrd v1.3.0
+require github.com/pinqy520/dcrd v1.3.0

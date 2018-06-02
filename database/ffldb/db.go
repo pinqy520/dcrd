@@ -22,11 +22,11 @@ import (
 	"github.com/btcsuite/goleveldb/leveldb/iterator"
 	"github.com/btcsuite/goleveldb/leveldb/opt"
 	"github.com/btcsuite/goleveldb/leveldb/util"
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/database"
-	"github.com/decred/dcrd/database/internal/treap"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/wire"
+	"github.com/pinqy520/dcrd/chaincfg/chainhash"
+	"github.com/pinqy520/dcrd/database"
+	"github.com/pinqy520/dcrd/database/internal/treap"
+	"github.com/pinqy520/dcrd/dcrutil"
+	"github.com/pinqy520/dcrd/wire"
 )
 
 const (

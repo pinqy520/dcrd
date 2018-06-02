@@ -3,7 +3,7 @@ dcrd
 
 [![Build Status](https://travis-ci.org/decred/dcrd.png?branch=master)](https://travis-ci.org/decred/dcrd)
 [![ISC License](http://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
-[![GoDoc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/decred/dcrd)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/pinqy520/dcrd)
 
 dcrd is a Decred full node implementation written in Go (golang).
 
@@ -63,8 +63,8 @@ For a first time installation, the project and dependency sources can be
 obtained manually with `git` and `dep` (create directories as needed):
 
 ```
-git clone https://github.com/decred/dcrd $GOPATH/src/github.com/decred/dcrd
-cd $GOPATH/src/github.com/decred/dcrd
+git clone https://github.com/pinqy520/dcrd $GOPATH/src/github.com/pinqy520/dcrd
+cd $GOPATH/src/github.com/pinqy520/dcrd
 dep ensure
 go install . ./cmd/...
 ```
@@ -73,7 +73,7 @@ To update an existing source tree, pull the latest changes and install the
 matching dependencies:
 
 ```
-cd $GOPATH/src/github.com/decred/dcrd
+cd $GOPATH/src/github.com/pinqy520/dcrd
 git pull
 dep ensure
 go install . ./cmd/...
@@ -111,13 +111,13 @@ If you have any further questions you can find us at:
 
 ## Issue Tracker
 
-The [integrated github issue tracker](https://github.com/decred/dcrd/issues)
+The [integrated github issue tracker](https://github.com/pinqy520/dcrd/issues)
 is used for this project.
 
 ## Documentation
 
 The documentation is a work-in-progress.  It is located in the
-[docs](https://github.com/decred/dcrd/tree/master/docs) folder.
+[docs](https://github.com/pinqy520/dcrd/tree/master/docs) folder.
 
 ## License
 

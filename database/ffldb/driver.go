@@ -8,8 +8,8 @@ package ffldb
 import (
 	"fmt"
 
-	"github.com/decred/dcrd/database"
-	"github.com/decred/dcrd/wire"
+	"github.com/pinqy520/dcrd/database"
+	"github.com/pinqy520/dcrd/wire"
 	"github.com/decred/slog"
 )
 

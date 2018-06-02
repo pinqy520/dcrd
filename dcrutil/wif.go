@@ -10,9 +10,9 @@ import (
 	"errors"
 
 	"github.com/decred/base58"
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainec"
-	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/pinqy520/dcrd/chaincfg"
+	"github.com/pinqy520/dcrd/chaincfg/chainec"
+	"github.com/pinqy520/dcrd/chaincfg/chainhash"
 )
 
 // ErrMalformedPrivateKey describes an error where a WIF-encoded private

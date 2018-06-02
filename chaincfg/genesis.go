@@ -8,8 +8,8 @@ package chaincfg
 import (
 	"time"
 
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/wire"
+	"github.com/pinqy520/dcrd/chaincfg/chainhash"
+	"github.com/pinqy520/dcrd/wire"
 )
 
 // MainNet ------------------------------------------------------------------------
@@ -148,7 +148,7 @@ var testNet2GenesisBlock = wire.MsgBlock{
 		Version:      4,
 		PrevBlock:    chainhash.Hash{},
 		MerkleRoot:   testNet2GenesisMerkleRoot,
-		Timestamp:    time.Unix(1489550400, 0), // 2017-03-15 TestNet10
+		Timestamp:    time.Unix(1527911293, 0), // 2018-06-02T03:48:13.192Z TestNet10
 		Bits:         0x1e00ffff,
 		SBits:        20000000,
 		Nonce:        0x18aea41a,

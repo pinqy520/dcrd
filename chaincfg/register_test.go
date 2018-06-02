@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	. "github.com/decred/dcrd/chaincfg"
+	. "github.com/pinqy520/dcrd/chaincfg"
 )
 
 // Define some of the required parameters for a user-registered

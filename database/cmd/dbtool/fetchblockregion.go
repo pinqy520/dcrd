@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/database"
+	"github.com/pinqy520/dcrd/chaincfg/chainhash"
+	"github.com/pinqy520/dcrd/database"
 )
 
 // blockRegionCmd defines the configuration options for the fetchblockregion

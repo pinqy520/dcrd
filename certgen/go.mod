@@ -1,1 +1,1 @@
-module github.com/decred/dcrd/certgen
+module github.com/pinqy520/dcrd/certgen

@@ -22,12 +22,12 @@ import (
 	"time"
 
 	"github.com/btcsuite/go-socks/socks"
-	"github.com/decred/dcrd/connmgr"
-	"github.com/decred/dcrd/database"
-	_ "github.com/decred/dcrd/database/ffldb"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/mempool"
-	"github.com/decred/dcrd/sampleconfig"
+	"github.com/pinqy520/dcrd/connmgr"
+	"github.com/pinqy520/dcrd/database"
+	_ "github.com/pinqy520/dcrd/database/ffldb"
+	"github.com/pinqy520/dcrd/dcrutil"
+	"github.com/pinqy520/dcrd/mempool"
+	"github.com/pinqy520/dcrd/sampleconfig"
 	"github.com/decred/slog"
 	flags "github.com/jessevdk/go-flags"
 )

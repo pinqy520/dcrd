@@ -13,14 +13,14 @@ import (
 	"math"
 	"time"
 
-	"github.com/decred/dcrd/blockchain"
-	"github.com/decred/dcrd/blockchain/chaingen"
-	"github.com/decred/dcrd/chaincfg/chainec"
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrec/secp256k1"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/txscript"
-	"github.com/decred/dcrd/wire"
+	"github.com/pinqy520/dcrd/blockchain"
+	"github.com/pinqy520/dcrd/blockchain/chaingen"
+	"github.com/pinqy520/dcrd/chaincfg/chainec"
+	"github.com/pinqy520/dcrd/chaincfg/chainhash"
+	"github.com/pinqy520/dcrd/dcrec/secp256k1"
+	"github.com/pinqy520/dcrd/dcrutil"
+	"github.com/pinqy520/dcrd/txscript"
+	"github.com/pinqy520/dcrd/wire"
 )
 
 const (

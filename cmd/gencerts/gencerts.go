@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/decred/dcrd/certgen"
+	"github.com/pinqy520/dcrd/certgen"
 	flags "github.com/jessevdk/go-flags"
 )
 

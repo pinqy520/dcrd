@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/pinqy520/dcrd/dcrjson"
 )
 
 // TestHelpReflectInternals ensures the various help functions which deal with

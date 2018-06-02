@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/pinqy520/dcrd/dcrjson"
 )
 
 // TestChainSvrCmds tests all of the chain server commands marshal and unmarshal

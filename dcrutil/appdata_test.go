@@ -13,7 +13,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/decred/dcrd/dcrutil"
+	"github.com/pinqy520/dcrd/dcrutil"
 )
 
 // TestAppDataDir tests the API for AppDataDir to ensure it gives expected

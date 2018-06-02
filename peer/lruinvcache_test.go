@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/wire"
+	"github.com/pinqy520/dcrd/chaincfg/chainhash"
+	"github.com/pinqy520/dcrd/wire"
 )
 
 // TestLruInventoryCache ensures the LruInventoryCache behaves as expected including

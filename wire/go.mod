@@ -1,3 +1,3 @@
-module github.com/decred/dcrd/wire
+module github.com/pinqy520/dcrd/wire
 
-require github.com/decred/dcrd/chaincfg/chainhash v1.0.0
+require github.com/pinqy520/dcrd/chaincfg/chainhash v1.0.0

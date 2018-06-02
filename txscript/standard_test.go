@@ -10,9 +10,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainec"
-	"github.com/decred/dcrd/dcrutil"
+	"github.com/pinqy520/dcrd/chaincfg"
+	"github.com/pinqy520/dcrd/chaincfg/chainec"
+	"github.com/pinqy520/dcrd/dcrutil"
 )
 
 // mustParseShortForm parses the passed short form script and returns the

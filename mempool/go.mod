@@ -1,3 +1,3 @@
-module github.com/decred/dcrd/mempool
+module github.com/pinqy520/dcrd/mempool
 
-require github.com/decred/dcrd v1.3.0
+require github.com/pinqy520/dcrd v1.3.0

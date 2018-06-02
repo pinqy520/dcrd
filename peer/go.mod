@@ -1,3 +1,3 @@
-module github.com/decred/dcrd/peer
+module github.com/pinqy520/dcrd/peer
 
-require github.com/decred/dcrd v1.3.0
+require github.com/pinqy520/dcrd v1.3.0

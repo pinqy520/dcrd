@@ -12,8 +12,8 @@ import (
 	"golang.org/x/crypto/ripemd160"
 
 	"github.com/decred/base58"
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainec"
+	"github.com/pinqy520/dcrd/chaincfg"
+	"github.com/pinqy520/dcrd/chaincfg/chainec"
 )
 
 var (

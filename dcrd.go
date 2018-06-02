@@ -15,8 +15,8 @@ import (
 	"runtime/pprof"
 	"time"
 
-	"github.com/decred/dcrd/blockchain/indexers"
-	"github.com/decred/dcrd/limits"
+	"github.com/pinqy520/dcrd/blockchain/indexers"
+	"github.com/pinqy520/dcrd/limits"
 )
 
 var cfg *config
